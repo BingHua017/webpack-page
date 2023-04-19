@@ -1,7 +1,7 @@
 const path = require('path');
-const glob = require('glob');
-const CopyWebpackPlugin = require('copy-webpack-plugin');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const MiniCssExtractPlugin = require('mini-css-extract-plugin');
+const PAGE_MODULE_NAME = 'index';
 
 const webpackConfig = {
   stats: 'errors-warnings',
@@ -10,19 +10,21 @@ const webpackConfig = {
       '@': path.resolve(__dirname, 'src'), // 以 @ 表示 src 目录
       config: path.resolve(__dirname, 'config'),
     },
+    extensions: ['.js', '.jsx', '.less'],
   },
-  entry: getEntries(),
+  entry: {
+    [PAGE_MODULE_NAME]: `./src/pages/${PAGE_MODULE_NAME}/index.js`,
+  },
   output: {
-    filename: '[name]/index.[contenthash:8].js',
-    chunkFilename: '[name]/index.[contenthash:8].js',
+    filename: 'bundle.[contenthash:8].js',
+    assetModuleFilename: 'images/[hash][ext]',
     path: path.resolve(__dirname, 'dist'),
     clean: true,
-    asyncChunks: true,
   },
   module: {
     rules: [
       {
-        test: /\.m?js$/,
+        test: /\.m?js$/i,
         exclude: /node_modules/,
         use: {
           loader: 'babel-loader',
@@ -30,39 +32,94 @@ const webpackConfig = {
             presets: [['@babel/preset-env', { targets: 'defaults' }]],
           },
         },
-      },
-      {
-        test: /\.(png|jpe?g|gif|svg|gif|webp)$/i,
-        type: 'asset/resource',
         generator: {
-          filename: (pathData) => {
-            const filePath = path.dirname(pathData.filename).split('/');
-            return `${filePath[filePath.indexOf('pages') + 1]}/images/[name].[contenthash:8][ext][query]`;
-          },
+          filename: `js/[name][ext]`,
         },
       },
       {
-        test: /\.html$/,
+        test: /\.(ico)$/i,
+        type: 'asset/resource',
+        generator: {
+          filename: `[name][ext]`,
+        },
+      },
+      {
+        test: /\.less$/i,
         use: [
+          MiniCssExtractPlugin.loader,
           {
-            loader: 'html-loader',
+            loader: 'css-loader',
             options: {
-              minimize: true, // 可选：是否压缩 HTML 文件
+              esModule: false,
+            },
+          },
+          'less-loader',
+        ],
+      },
+      {
+        test: /\.css$/i,
+        use: [
+          MiniCssExtractPlugin.loader,
+          {
+            loader: 'css-loader',
+            options: {
+              esModule: false,
             },
           },
         ],
       },
       {
-        test: /\.css$/,
-        loader: 'css-loader',
+        test: /\.(png|jpe?g|gif|svg|gif|webp)$/i,
+        type: 'javascript/auto',
+        use: [
+          {
+            loader: 'file-loader',
+            options: {
+              limit: 8192,
+              name: '[name].[ext]',
+              outputPath: 'images/',
+              publicPath: 'images/',
+              esModule: false, // 关闭ES模块语法，启用CommonJS模块语法
+            },
+          },
+        ],
       },
       {
-        test: /\.less$/i,
-        use: ['style-loader', 'css-loader', 'less-loader'],
+        test: /\.html$/i,
+        use: [
+          {
+            loader: 'html-loader',
+            options: {
+              minimize: false, // 可选：是否压缩 HTML 文件
+              sources: {
+                list: [
+                  '...',
+                  {
+                    tag: 'van-image',
+                    attribute: 'src',
+                    type: 'src',
+                  },
+                ],
+              },
+            },
+          },
+        ],
       },
     ],
   },
-  plugins: [...getHtmlPlugins(), ...getCopyPlugins()],
+  plugins: [
+    new HtmlWebpackPlugin({
+      filename: `index.html`,
+      template: `./src/pages/${PAGE_MODULE_NAME}/index.html`,
+      hash: true, // 添加 hash 到文件名
+      cache: false, // 禁用缓存
+      minify: true, // 启用压缩
+      inject: 'body',
+    }),
+    new MiniCssExtractPlugin({
+      filename: `bundle.[contenthash:8].css`,
+    }),
+  ],
   performance: {
     hints: false,
     maxAssetSize: 300000,
@@ -71,60 +128,3 @@ const webpackConfig = {
 };
 
 module.exports = webpackConfig;
-
-// 获取所有子文件夹的entry配置
-function getEntries() {
-  const entries = {};
-  const pagesPath = path.resolve(__dirname, 'src/pages');
-  const folders = glob.sync('*', { cwd: pagesPath, onlyDirectories: true });
-  folders.forEach((folder) => {
-    const folderName = path.basename(folder);
-    entries[folderName] = `./src/pages/${folder}/index.js`;
-  });
-  return entries;
-}
-
-// 获取所有子文件夹的HtmlWebpackPlugin配置
-function getHtmlPlugins() {
-  const htmlPlugins = [];
-  const pagesPath = path.resolve(__dirname, 'src/pages');
-  const faviconPath = path.resolve(__dirname, 'src/assets/favicon.ico');
-  const folders = glob.sync('*', { cwd: pagesPath, onlyDirectories: true });
-  folders.forEach((folder) => {
-    const folderName = path.basename(folder);
-    htmlPlugins.push(
-      new HtmlWebpackPlugin({
-        filename: `${folderName}/index.html`,
-        chunkFilename: `${folderName}/index.js`,
-        template: `./src/pages/${folder}/index.html`,
-        chunks: [folderName],
-        hash: true, // 添加 hash 到文件名
-        cache: false, // 禁用缓存
-        minify: false, // 启用压缩
-        favicon: faviconPath,
-      })
-    );
-  });
-  return htmlPlugins;
-}
-
-// 获取所有子文件夹的CopyWebpackPlugin配置
-function getCopyPlugins() {
-  const copyPlugins = [];
-  const pagesPath = path.resolve(__dirname, 'src/pages');
-  const folders = glob.sync('*', { cwd: pagesPath, onlyDirectories: true });
-  folders.forEach((folder) => {
-    const folderName = path.basename(folder);
-    copyPlugins.push(
-      new CopyWebpackPlugin({
-        patterns: [
-          {
-            from: './src/assets/favicon.ico', // 指定favicon图标文件的源路径
-            to: `${folderName}/favicon.ico`, // 指定favicon图标文件的目标路径
-          },
-        ],
-      })
-    );
-  });
-  return copyPlugins;
-}
